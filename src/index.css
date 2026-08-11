@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #F8F7F4;
+    color: #1D1D1B;
+  }
+
+  h1, h2, h3, h4, .font-serif {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+}
+
+.bg-editorial-canvas {
+  background-color: #F8F7F4;
+}
+
+.bg-editorial-card {
+  background-color: #FDFCFB;
+}
+
+.bg-editorial-dark {
+  background-color: #1D1D1B;
+}
+
+.border-editorial {
+  border-color: #E5E5E1;
+}
+
+/* Custom scrollbar for editorial feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F8F7F4;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D5D5D0;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #B5B5B0;
+}

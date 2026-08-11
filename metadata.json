@@ -1,0 +1,6 @@
+{
+  "name": "NOU - Nexus Online Institute",
+  "description": "Complete online education admission system, entrance examination portal, automatic test evaluation, student dashboard, admin management, and faculty portal for Nexus Online Institute.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
