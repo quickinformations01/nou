@@ -20,7 +20,8 @@ import { api } from '../../services/api';
 import { D1Config, D1QueryResult, D1Stats } from '../../types';
 
 export const CloudflareD1Console: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'query' | 'settings' | 'logs' | 'schema'>('query');
+  const [activeSubTab, setActiveSubTab] = useState<'query' | 'settings' | 'logs' | 'schema' | 'worker-guide'>('query');
+  const [copiedWorker, setCopiedWorker] = useState(false);
 
   const [sqlQuery, setSqlQuery] = useState('SELECT * FROM drivers;');
   const [queryResult, setQueryResult] = useState<D1QueryResult | null>(null);
@@ -158,6 +159,135 @@ CREATE TABLE IF NOT EXISTS documents (
     setTimeout(() => setCopiedSchema(false), 2500);
   };
 
+  const workerJsCode = `export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    // Support variable bindings: noudb (your binding), DB, or nou
+    const db = env.noudb || env.DB || env.nou;
+
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    };
+
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    if (!db) {
+      return Response.json(
+        { error: 'D1 binding missing! Please bind D1 database variable as "noudb" or "DB" in Cloudflare Worker settings.' },
+        { status: 500, headers: corsHeaders }
+      );
+    }
+
+    try {
+      // 1. GET /api/drivers - List all drivers
+      if (url.pathname === '/api/drivers' && request.method === 'GET') {
+        const { results } = await db.prepare('SELECT * FROM drivers ORDER BY createdAt DESC').all();
+        return Response.json(results, { headers: corsHeaders });
+      }
+
+      // 2. POST /api/drivers - Register new driver
+      if (url.pathname === '/api/drivers' && request.method === 'POST') {
+        const driver = await request.json();
+        const id = 'drv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const now = new Date().toISOString();
+
+        await db.prepare(\`
+          INSERT INTO drivers (
+            id, fullName, email, phone, cnicNumber, dob, gender, address, city,
+            emergencyContactName, emergencyContactPhone, vehicleType, vehicleMake,
+            vehicleModel, vehicleYear, licensePlate, vehicleColor, drivingLicenseNumber,
+            licenseExpiryDate, status, createdAt, updatedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)
+        \`).bind(
+          id, driver.fullName, driver.email, driver.phone, driver.cnicNumber,
+          driver.dob || '', driver.gender || '', driver.address, driver.city,
+          driver.emergencyContactName || '', driver.emergencyContactPhone || '',
+          driver.vehicleType, driver.vehicleMake, driver.vehicleModel,
+          driver.vehicleYear || '', driver.licensePlate, driver.vehicleColor || '',
+          driver.drivingLicenseNumber, driver.licenseExpiryDate || '',
+          now, now
+        ).run();
+
+        if (driver.documents && Array.isArray(driver.documents)) {
+          for (const doc of driver.documents) {
+            const docId = 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+            await db.prepare(\`
+              INSERT INTO documents (id, entityId, entityType, type, title, fileName, fileType, fileSize, dataUrl, uploadedAt)
+              VALUES (?, ?, 'driver', ?, ?, ?, ?, ?, ?, ?)
+            \`).bind(docId, id, doc.type, doc.title, doc.fileName, doc.fileType, doc.fileSize, doc.dataUrl, now).run();
+          }
+        }
+
+        return Response.json({ success: true, id }, { headers: corsHeaders });
+      }
+
+      // 3. GET /api/riders - List all riders
+      if (url.pathname === '/api/riders' && request.method === 'GET') {
+        const { results } = await db.prepare('SELECT * FROM riders ORDER BY createdAt DESC').all();
+        return Response.json(results, { headers: corsHeaders });
+      }
+
+      // 4. POST /api/riders - Register new rider
+      if (url.pathname === '/api/riders' && request.method === 'POST') {
+        const rider = await request.json();
+        const id = 'rdr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const now = new Date().toISOString();
+
+        await db.prepare(\`
+          INSERT INTO riders (
+            id, fullName, email, phone, cnicNumber, dob, gender, homeAddress, city,
+            preferredPaymentMethod, preferredVehicleTypes, emergencyContactName, emergencyContactPhone,
+            status, createdAt, updatedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', ?, ?)
+        \`).bind(
+          id, rider.fullName, rider.email, rider.phone, rider.cnicNumber,
+          rider.dob || '', rider.gender || '', rider.homeAddress, rider.city,
+          rider.preferredPaymentMethod || '', rider.preferredVehicleTypes || '',
+          rider.emergencyContactName || '', rider.emergencyContactPhone || '',
+          now, now
+        ).run();
+
+        return Response.json({ success: true, id }, { headers: corsHeaders });
+      }
+
+      // 5. GET /api/documents - Query documents
+      if (url.pathname === '/api/documents' && request.method === 'GET') {
+        const entityId = url.searchParams.get('entityId');
+        if (!entityId) {
+          const { results } = await db.prepare('SELECT * FROM documents').all();
+          return Response.json(results, { headers: corsHeaders });
+        }
+        const { results } = await db.prepare('SELECT * FROM documents WHERE entityId = ?').bind(entityId).all();
+        return Response.json(results, { headers: corsHeaders });
+      }
+
+      // 6. POST /api/d1/query - Execute custom D1 query
+      if (url.pathname === '/api/d1/query' && request.method === 'POST') {
+        const { query } = await request.json();
+        const startTime = Date.now();
+        const { results } = await db.prepare(query).all();
+        const durationMs = Date.now() - startTime;
+        return Response.json({ results, meta: { durationMs, changed: true } }, { headers: corsHeaders });
+      }
+
+      return new Response('Route not found', { status: 404, headers: corsHeaders });
+    } catch (err) {
+      return Response.json({ error: err.message }, { status: 500, headers: corsHeaders });
+    }
+  }
+};`;
+
+  const copyWorkerToClipboard = () => {
+    navigator.clipboard.writeText(workerJsCode);
+    setCopiedWorker(true);
+    setTimeout(() => setCopiedWorker(false), 2500);
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -264,6 +394,17 @@ CREATE TABLE IF NOT EXISTS documents (
           }`}
         >
           <FileCode className="w-4 h-4" /> D1 schema.sql
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('worker-guide')}
+          className={`px-4 py-2 text-xs font-bold border-b-2 flex items-center gap-2 transition-all ${
+            activeSubTab === 'worker-guide'
+              ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+              : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+        >
+          <Server className="w-4 h-4 text-sky-400" /> Cloudflare Worker Code & UI Setup
         </button>
       </div>
 
@@ -533,6 +674,74 @@ CREATE TABLE IF NOT EXISTS documents (
           <pre className="p-4 bg-slate-950 text-emerald-400 font-mono text-xs rounded-xl overflow-x-auto border border-slate-800">
             {schemaSqlCode}
           </pre>
+        </div>
+      )}
+
+      {/* SUBTAB 5: WORKER CODE & CLOUDFLARE UI SETUP GUIDE */}
+      {activeSubTab === 'worker-guide' && (
+        <div className="space-y-6">
+          {/* Step-by-step UI connection instructions */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-500" /> Connecting Cloudflare D1 Backend via Cloudflare UI
+            </h3>
+            
+            <ol className="list-decimal list-inside space-y-3 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+              <li className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                <strong className="text-amber-500 font-semibold">Step 1: Create D1 Database in Cloudflare Dashboard</strong><br />
+                Go to <span className="font-mono text-sky-400">Cloudflare Dashboard &gt; Storage &amp; Databases &gt; D1 SQL Database</span>. Click <strong>Create Database</strong>, name it <code className="bg-slate-200 dark:bg-slate-900 px-1 py-0.5 rounded font-mono">noudb</code> (or <code className="bg-slate-200 dark:bg-slate-900 px-1 py-0.5 rounded font-mono">nou</code>), and copy the <strong>Database ID</strong>.
+              </li>
+              <li className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                <strong className="text-amber-500 font-semibold">Step 2: Generate Tables using D1 Console or Wrangler CLI</strong><br />
+                In Cloudflare Dashboard, open your <code className="font-mono text-amber-400">noudb</code> database &gt; <strong>Console</strong> tab. Paste the SQL code from the <button onClick={() => setActiveSubTab('schema')} className="text-sky-400 underline font-semibold">D1 schema.sql tab</button> and click <strong>Execute</strong>. Alternatively, run:
+                <div className="mt-1.5 p-2 bg-slate-950 text-emerald-400 font-mono text-[11px] rounded-lg">
+                  wrangler d1 execute noudb --command="CREATE TABLE IF NOT EXISTS drivers (...);"
+                </div>
+              </li>
+              <li className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                <strong className="text-amber-500 font-semibold">Step 3: Create Cloudflare Worker in Dashboard</strong><br />
+                Go to <span className="font-mono text-sky-400">Workers &amp; Pages &gt; Create Application &gt; Create Worker</span>. Name it <code className="bg-slate-200 dark:bg-slate-900 px-1 py-0.5 rounded font-mono">driver-portal-api</code> and click <strong>Deploy</strong>.
+              </li>
+              <li className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                <strong className="text-amber-500 font-semibold">Step 4: Bind D1 Database to the Worker</strong><br />
+                In your Worker dashboard, go to <strong>Settings &gt; Variables &gt; D1 Database Bindings</strong>. Click <strong>Add binding</strong>:
+                <ul className="list-disc list-inside mt-1 ml-4 text-slate-500 dark:text-slate-400">
+                  <li>Variable Name: <code className="text-emerald-400 font-mono font-bold">DB</code></li>
+                  <li>D1 Database: Select <code className="text-amber-400 font-mono font-bold">noudb</code></li>
+                </ul>
+              </li>
+              <li className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                <strong className="text-amber-500 font-semibold">Step 5: Paste Worker Code & Deploy</strong><br />
+                Click <strong>Edit Code</strong> in Cloudflare Worker online editor, paste the <code className="font-mono text-sky-400">worker.js</code> code provided below, and click <strong>Save and Deploy</strong>.
+              </li>
+            </ol>
+          </div>
+
+          {/* Code block for worker.js */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                  <FileCode className="w-4 h-4 text-sky-400" /> worker.js (Cloudflare Worker Code)
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Complete CORS-enabled Cloudflare Worker API for driver/rider registrations and document queries against <code className="text-emerald-400 font-mono">env.DB</code>.
+                </p>
+              </div>
+
+              <button
+                onClick={copyWorkerToClipboard}
+                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors border border-slate-700"
+              >
+                {copiedWorker ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                {copiedWorker ? 'Copied worker.js!' : 'Copy worker.js'}
+              </button>
+            </div>
+
+            <pre className="p-4 bg-slate-950 text-sky-300 font-mono text-xs rounded-xl overflow-x-auto border border-slate-800 max-h-[450px]">
+              {workerJsCode}
+            </pre>
+          </div>
         </div>
       )}
     </div>
