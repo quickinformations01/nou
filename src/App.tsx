@@ -1,235 +1,209 @@
 import React, { useState, useEffect } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import {
+  Car,
+  UserCheck,
+  FolderKanban,
+  Database,
+  ShieldCheck,
+  Sparkles,
+  Layers,
+  FileCode,
+  CheckCircle2,
+  ExternalLink,
+  ChevronRight,
+  Server
+} from 'lucide-react';
+import { DriverRegistrationForm } from './components/public/DriverRegistrationForm';
+import { RiderRegistrationForm } from './components/public/RiderRegistrationForm';
+import { RegistrationsPortal } from './components/admin/RegistrationsPortal';
+import { CloudflareD1Console } from './components/admin/CloudflareD1Console';
 import { api } from './services/api';
-import { Program, EntranceTest, Question, TestResult, Application } from './types';
+import { D1Config } from './types';
 
-// Common UI
-import { DemoBanner } from './components/common/DemoBanner';
-import { Header } from './components/common/Header';
-import { Footer } from './components/common/Footer';
+export default function App() {
+  const [activeTab, setActiveTab] = useState<'driver-reg' | 'rider-reg' | 'manage' | 'd1-console'>('driver-reg');
+  const [d1Config, setD1Config] = useState<D1Config | null>(null);
 
-// Public Views
-import { HomeView } from './components/public/HomeView';
-import { ProgramsView } from './components/public/ProgramsView';
-import { AdmissionsView } from './components/public/AdmissionsView';
-import { EntranceTestInfoView } from './components/public/EntranceTestInfoView';
-import { FacultyView } from './components/public/FacultyView';
-import { AboutView, ContactView, FAQsView, ImportantDatesView } from './components/public/InfoPages';
-
-// Student Auth & Dashboard
-import { AuthViews } from './components/student/AuthViews';
-import { StudentDashboard } from './components/student/StudentDashboard';
-import { MultiStepApplication } from './components/student/MultiStepApplication';
-import { EntranceTestPortal } from './components/student/EntranceTestPortal';
-import { TestResultView } from './components/student/TestResultView';
-
-// Admin / Faculty Modules
-import { AdminDashboard } from './components/admin/AdminDashboard';
-import { ApplicationManagement } from './components/admin/ApplicationManagement';
-import { QuestionBankAdmin } from './components/admin/QuestionBankAdmin';
-
-function MainAppContent() {
-  const { user, isAuthenticated, activeRole } = useAuth();
-  const [currentPage, setCurrentPage] = useState<string>('home');
-  const [selectedProgramId, setSelectedProgramId] = useState<string | undefined>();
-
-  // Application & Test Active State
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [activeTest, setActiveTest] = useState<EntranceTest | null>(null);
-  const [activeQuestions, setActiveQuestions] = useState<Question[]>([]);
-  const [testAttemptId, setTestAttemptId] = useState<string>('');
-  const [testAppId, setTestAppId] = useState<string>('');
-  const [activeResult, setActiveResult] = useState<TestResult | null>(null);
-
-  // Load public program data
   useEffect(() => {
-    async function loadProgramsData() {
+    async function checkD1() {
       try {
-        const progs = await api.getPrograms();
-        setPrograms(progs);
+        const conf = await api.getD1Config();
+        setD1Config(conf);
       } catch (err) {
-        console.error('Failed to load programs:', err);
+        console.error('Failed to query D1 config:', err);
       }
     }
-    loadProgramsData();
+    checkD1();
   }, []);
 
-  // Handle Entrance Test Launch
-  const handleOpenEntranceTest = async (testId: string, applicationId: string) => {
-    try {
-      const { attempt, test, questions } = await api.startTestAttempt(testId, applicationId);
-      setActiveTest(test);
-      setActiveQuestions(questions);
-      setTestAttemptId(attempt.id);
-      setTestAppId(applicationId);
-      setCurrentPage('test-portal');
-    } catch (err: any) {
-      alert(err.message || 'Could not start test session.');
-    }
-  };
-
-  // Handle Viewing Test Scorecard
-  const handleViewScorecard = async (resultId: string) => {
-    try {
-      const res = await api.getTestResult(resultId);
-      if (res) {
-        setActiveResult(res);
-        setCurrentPage('test-result');
-      }
-    } catch (err: any) {
-      alert(err.message || 'Could not load test result.');
-    }
-  };
-
-  // Render Test Portal full screen (no header/footer)
-  if (currentPage === 'test-portal' && activeTest) {
-    return (
-      <EntranceTestPortal
-        test={activeTest}
-        questions={activeQuestions}
-        attemptId={testAttemptId}
-        applicationId={testAppId}
-        studentName={user?.name || 'Candidate'}
-        onTestSubmitted={(result) => {
-          setActiveResult(result);
-          setCurrentPage('test-result');
-        }}
-        onExit={() => setCurrentPage('dashboard')}
-      />
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-[#F8F7F4] text-[#1D1D1B] font-sans flex flex-col justify-between selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-between font-sans selection:bg-sky-500 selection:text-white">
       <div>
-        {/* Role Selector Demo Banner */}
-        <DemoBanner onNavigate={setCurrentPage} />
-
-        {/* Global Navigation Header */}
-        <Header currentPage={currentPage} onNavigate={setCurrentPage} />
-
-        {/* Dynamic Page Views */}
-        <main className="pb-16">
-          {currentPage === 'home' && (
-            <HomeView
-              programs={programs}
-              onNavigate={setCurrentPage}
-              onSelectProgram={(pId) => {
-                setSelectedProgramId(pId);
-                setCurrentPage('apply');
-              }}
-            />
-          )}
-
-          {currentPage === 'programs' && (
-            <ProgramsView
-              programs={programs}
-              onNavigate={setCurrentPage}
-              onSelectProgram={(pId) => {
-                setSelectedProgramId(pId);
-                setCurrentPage('apply');
-              }}
-            />
-          )}
-
-          {currentPage === 'admissions' && <AdmissionsView onNavigate={setCurrentPage} />}
-          {currentPage === 'test-info' && <EntranceTestInfoView onNavigate={setCurrentPage} />}
-          {currentPage === 'faculty' && <FacultyView />}
-          {currentPage === 'about' && <AboutView />}
-          {currentPage === 'contact' && <ContactView />}
-          {currentPage === 'faqs' && <FAQsView />}
-          {currentPage === 'dates' && <ImportantDatesView />}
-
-          {/* Student Auth */}
-          {(currentPage === 'login' || currentPage === 'register') && (
-            <AuthViews initialMode={currentPage as any} onNavigate={setCurrentPage} />
-          )}
-
-          {/* Student Dashboard & Portal */}
-          {currentPage === 'dashboard' && (
-            <StudentDashboard
-              programs={programs}
-              onStartApplication={(pId) => {
-                if (pId) setSelectedProgramId(pId);
-                setCurrentPage('apply');
-              }}
-              onOpenTest={handleOpenEntranceTest}
-              onViewResult={handleViewScorecard}
-              onNavigatePublic={setCurrentPage}
-            />
-          )}
-
-          {/* Multi-step Application */}
-          {currentPage === 'apply' && (
-            <MultiStepApplication
-              programs={programs}
-              selectedProgramId={selectedProgramId}
-              onSubmitted={(app) => {
-                alert(`Application submitted successfully! Ref ID: ${app.id}`);
-                setCurrentPage('dashboard');
-              }}
-              onCancel={() => setCurrentPage('dashboard')}
-            />
-          )}
-
-          {/* Test Result View */}
-          {currentPage === 'test-result' && activeResult && (
-            <TestResultView result={activeResult} onNavigateDashboard={() => setCurrentPage('dashboard')} />
-          )}
-
-          {/* Admin / Faculty Dashboard & Tools */}
-          {(currentPage === 'admin' || currentPage === 'admin-dashboard') && (
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-              <div className="bg-[#1D1D1B] text-white rounded-2xl p-6 shadow-md flex flex-wrap items-center justify-between gap-4 border border-[#E5E5E1]">
-                <div>
-                  <span className="text-[10px] text-indigo-300 uppercase tracking-[0.2em] font-bold">Admin Control Portal</span>
-                  <h1 className="text-2xl font-serif italic mt-1">NOU Admission & Academic Administration</h1>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage('admin-applications')}
-                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors"
-                  >
-                    Applications
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage('admin-questions')}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors"
-                  >
-                    Question Bank
-                  </button>
-                </div>
+        {/* Top Navbar */}
+        <header className="sticky top-0 z-40 bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-800 text-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            {/* Logo & Title */}
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('driver-reg')}>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20">
+                <Car className="w-5 h-5" />
               </div>
-
-              <AdminDashboard onNavigateSection={(sec) => setCurrentPage(`admin-${sec}`)} />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="font-extrabold text-base tracking-tight text-white">Driver & Rider Portal</h1>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">
+                    D1 Cloudflare
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 hidden sm:block">
+                  Registration & CNIC / License Document Storage in Cloudflare D1
+                </p>
+              </div>
             </div>
+
+            {/* Navigation Tabs */}
+            <nav className="hidden md:flex items-center gap-1 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/80">
+              <button
+                onClick={() => setActiveTab('driver-reg')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                  activeTab === 'driver-reg'
+                    ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+                }`}
+              >
+                <Car className="w-3.5 h-3.5 text-sky-300" /> Driver Registration
+              </button>
+
+              <button
+                onClick={() => setActiveTab('rider-reg')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                  activeTab === 'rider-reg'
+                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5 text-purple-300" /> Rider Registration
+              </button>
+
+              <button
+                onClick={() => setActiveTab('manage')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                  activeTab === 'manage'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+                }`}
+              >
+                <FolderKanban className="w-3.5 h-3.5 text-emerald-300" /> Manage Records
+              </button>
+
+              <button
+                onClick={() => setActiveTab('d1-console')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                  activeTab === 'd1-console'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30 font-black'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5 text-amber-400" /> D1 SQL Console
+              </button>
+            </nav>
+
+            {/* Cloudflare D1 Connection Badge */}
+            <div className="flex items-center gap-2">
+              <div
+                onClick={() => setActiveTab('d1-console')}
+                className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono text-emerald-400 border border-slate-700 transition-colors"
+                title="Click to open Cloudflare D1 Console"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="hidden sm:inline">D1 DB:</span>
+                <span className="font-bold">{d1Config?.databaseId || 'noudb'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile subnav */}
+          <div className="md:hidden flex overflow-x-auto border-t border-slate-800 px-4 py-2 gap-2 text-xs">
+            <button
+              onClick={() => setActiveTab('driver-reg')}
+              className={`px-3 py-1.5 rounded-lg font-semibold shrink-0 ${
+                activeTab === 'driver-reg' ? 'bg-sky-600 text-white' : 'text-slate-300 bg-slate-800'
+              }`}
+            >
+              Driver Reg
+            </button>
+            <button
+              onClick={() => setActiveTab('rider-reg')}
+              className={`px-3 py-1.5 rounded-lg font-semibold shrink-0 ${
+                activeTab === 'rider-reg' ? 'bg-purple-600 text-white' : 'text-slate-300 bg-slate-800'
+              }`}
+            >
+              Rider Reg
+            </button>
+            <button
+              onClick={() => setActiveTab('manage')}
+              className={`px-3 py-1.5 rounded-lg font-semibold shrink-0 ${
+                activeTab === 'manage' ? 'bg-emerald-600 text-white' : 'text-slate-300 bg-slate-800'
+              }`}
+            >
+              Records & Docs
+            </button>
+            <button
+              onClick={() => setActiveTab('d1-console')}
+              className={`px-3 py-1.5 rounded-lg font-semibold shrink-0 ${
+                activeTab === 'd1-console' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 bg-slate-800'
+              }`}
+            >
+              D1 Console
+            </button>
+          </div>
+        </header>
+
+        {/* Main Content Body */}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {activeTab === 'driver-reg' && (
+            <DriverRegistrationForm onSuccess={() => setActiveTab('manage')} />
           )}
 
-          {currentPage === 'admin-applications' && (
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <ApplicationManagement programs={programs} />
-            </div>
+          {activeTab === 'rider-reg' && (
+            <RiderRegistrationForm onSuccess={() => setActiveTab('manage')} />
           )}
 
-          {currentPage === 'admin-questions' && (
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <QuestionBankAdmin />
-            </div>
-          )}
+          {activeTab === 'manage' && <RegistrationsPortal />}
+
+          {activeTab === 'd1-console' && <CloudflareD1Console />}
         </main>
       </div>
 
       {/* Global Footer */}
-      <Footer onNavigate={setCurrentPage} />
-    </div>
-  );
-}
+      <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 text-xs py-8 mt-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded bg-sky-600 flex items-center justify-center text-white">
+                <Car className="w-3.5 h-3.5" />
+              </div>
+              <span className="font-bold text-slate-200">Driver & Rider Registration Portal</span>
+              <span className="text-[11px] text-slate-500">• Cloudflare D1 Backend Integration</span>
+            </div>
 
-export default function App() {
-  return (
-    <AuthProvider>
-      <MainAppContent />
-    </AuthProvider>
+            <div className="flex items-center gap-4 text-[11px] font-mono">
+              <span className="text-slate-500">Tables:</span>
+              <span className="text-sky-400">drivers</span>
+              <span className="text-purple-400">riders</span>
+              <span className="text-emerald-400">documents</span>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-2 text-[11px] text-slate-500">
+            <p>© 2026 Driver & Rider Registration Platform. All documents & data stored in Cloudflare D1.</p>
+            <div className="flex items-center gap-4">
+              <button onClick={() => setActiveTab('driver-reg')} className="hover:text-slate-300">Driver Registration</button>
+              <button onClick={() => setActiveTab('rider-reg')} className="hover:text-slate-300">Rider Registration</button>
+              <button onClick={() => setActiveTab('d1-console')} className="hover:text-amber-400 font-mono">D1 Console</button>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }

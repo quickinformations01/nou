@@ -1,6 +1,6 @@
 {
-  "name": "NOU - Nexus Online Institute",
-  "description": "Complete online education admission system, entrance examination portal, automatic test evaluation, student dashboard, admin management, and faculty portal for Nexus Online Institute.",
+  "name": "Driver & Rider Registration Portal",
+  "description": "Full-stack Driver and Rider registration application with document upload (CNIC front/back, driving license, vehicle registration) stored in Cloudflare D1 database.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
