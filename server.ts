@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { loadD1Store, saveD1Store, executeD1Query } from './server/d1Database.js';
+import { loadD1Store, saveD1Store, executeD1Query, syncAllToCloudflareD1 } from './server/d1Database.js';
 import { DriverRegistration, RiderRegistration, DocumentItem, D1Config } from './src/types.js';
 
 async function startServer() {
@@ -278,17 +278,38 @@ async function startServer() {
   });
 
   // CLOUDFLARE D1: Update D1 Config
-  app.post(['/api/d1/config', '/api/d1/config/'], (req, res) => {
+  app.post(['/api/d1/config', '/api/d1/config/'], async (req, res) => {
     const { accountId, databaseId, apiToken, databaseName } = req.body;
     d1Store.config = {
       accountId: accountId || '',
-      databaseId: databaseId || 'nou',
-      apiToken: apiToken || '',
-      databaseName: databaseName || 'noudb',
-      isConnected: !!(accountId && databaseId && apiToken)
+      databaseId: databaseId || 'c9df20bd-cefd-4996-9ff5-c1e3a6c93d10',
+      apiToken: apiToken !== undefined ? apiToken : d1Store.config.apiToken,
+      databaseName: databaseName || 'noudb (nou)',
+      isConnected: !!(accountId && databaseId && (apiToken || d1Store.config.apiToken))
     };
     saveD1Store();
-    res.json({ success: true, config: d1Store.config });
+
+    // If API token was provided, test query against Cloudflare D1 REST API
+    let testResult: any = null;
+    if (d1Store.config.accountId && d1Store.config.databaseId && d1Store.config.apiToken) {
+      testResult = await executeD1Query('SELECT 1 as connected;');
+    }
+
+    res.json({
+      success: true,
+      config: d1Store.config,
+      testResult
+    });
+  });
+
+  // CLOUDFLARE D1: Sync all local records to Cloudflare D1
+  app.post(['/api/d1/sync', '/api/d1/sync/'], async (req, res) => {
+    try {
+      const syncResult = await syncAllToCloudflareD1();
+      res.json(syncResult);
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message || 'Sync failed' });
+    }
   });
 
   // CLOUDFLARE D1: Stats & Execution Logs

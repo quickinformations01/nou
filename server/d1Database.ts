@@ -443,6 +443,10 @@ export async function executeD1Query(sql: string, params: any[] = []): Promise<D
     changes = 1;
   }
 
+  const servedByReason = !store.config.apiToken
+    ? 'Local Store (Missing API Token - Provide API Token in D1 Settings)'
+    : 'Local Store (Cloudflare API Call Exception)';
+
   store.queryLogs.unshift({
     id: `qlog-${Date.now()}`,
     query: sql,
@@ -458,9 +462,99 @@ export async function executeD1Query(sql: string, params: any[] = []): Promise<D
     meta: {
       duration,
       changes,
-      served_by: store.config.accountId ? 'cloudflare_d1_api' : 'cloudflare_d1_local_binding'
+      served_by: servedByReason
     },
     sql,
     timestamp: new Date().toISOString()
   };
 }
+
+/**
+ * Bulk syncs all local drivers, riders, and documents from memory to Cloudflare D1 Database REST API.
+ */
+export async function syncAllToCloudflareD1(): Promise<{
+  success: boolean;
+  syncedDrivers: number;
+  syncedRiders: number;
+  syncedDocuments: number;
+  errors: string[];
+}> {
+  const store = loadD1Store();
+  if (!store.config.accountId || !store.config.databaseId || !store.config.apiToken) {
+    throw new Error('Cloudflare D1 credentials missing. Please set Account ID, Database ID, and API Token in D1 Console Settings.');
+  }
+
+  await initCloudflareD1Schema();
+
+  let syncedDrivers = 0;
+  let syncedRiders = 0;
+  let syncedDocuments = 0;
+  const errors: string[] = [];
+
+  // Sync drivers
+  for (const driver of store.drivers) {
+    const sql = `INSERT OR REPLACE INTO drivers (
+      id, fullName, email, phone, cnicNumber, dob, gender, address, city,
+      emergencyContactName, emergencyContactPhone, vehicleType, vehicleMake, vehicleModel,
+      vehicleYear, licensePlate, vehicleColor, drivingLicenseNumber, licenseExpiryDate,
+      status, statusNotes, createdAt, updatedAt
+    ) VALUES (
+      '${driver.id}', '${driver.fullName.replace(/'/g, "''")}', '${driver.email.replace(/'/g, "''")}', '${driver.phone}', '${driver.cnicNumber}',
+      '${driver.dob || ''}', '${driver.gender || ''}', '${(driver.address || '').replace(/'/g, "''")}', '${(driver.city || '').replace(/'/g, "''")}',
+      '${(driver.emergencyContactName || '').replace(/'/g, "''")}', '${driver.emergencyContactPhone || ''}', '${driver.vehicleType || ''}',
+      '${(driver.vehicleMake || '').replace(/'/g, "''")}', '${(driver.vehicleModel || '').replace(/'/g, "''")}', '${driver.vehicleYear || ''}',
+      '${driver.licensePlate || ''}', '${driver.vehicleColor || ''}', '${driver.drivingLicenseNumber || ''}', '${driver.licenseExpiryDate || ''}',
+      '${driver.status || 'Pending'}', '${(driver.statusNotes || '').replace(/'/g, "''")}', '${driver.createdAt}', '${driver.updatedAt}'
+    );`;
+
+    const res = await executeD1Query(sql);
+    if (res.success) {
+      syncedDrivers++;
+    } else {
+      errors.push(`Driver ${driver.id}: ${res.error}`);
+    }
+
+    for (const doc of driver.documents) {
+      const docSql = `INSERT OR REPLACE INTO documents (id, ownerId, ownerType, docType, fileName, uploadedAt) VALUES ('${doc.id}', '${driver.id}', 'driver', '${doc.type}', '${doc.fileName.replace(/'/g, "''")}', '${doc.uploadedAt}');`;
+      const docRes = await executeD1Query(docSql);
+      if (docRes.success) syncedDocuments++;
+    }
+  }
+
+  // Sync riders
+  for (const rider of store.riders) {
+    const sql = `INSERT OR REPLACE INTO riders (
+      id, fullName, email, phone, cnicNumber, dob, gender, homeAddress, city,
+      preferredPaymentMethod, preferredVehicleTypes, emergencyContactName, emergencyContactPhone,
+      status, statusNotes, createdAt, updatedAt
+    ) VALUES (
+      '${rider.id}', '${rider.fullName.replace(/'/g, "''")}', '${rider.email.replace(/'/g, "''")}', '${rider.phone}', '${rider.cnicNumber}',
+      '${rider.dob || ''}', '${rider.gender || ''}', '${(rider.homeAddress || '').replace(/'/g, "''")}', '${(rider.city || '').replace(/'/g, "''")}',
+      '${rider.preferredPaymentMethod || 'Cash'}', '${JSON.stringify(rider.preferredVehicleTypes || [])}',
+      '${(rider.emergencyContactName || '').replace(/'/g, "''")}', '${rider.emergencyContactPhone || ''}',
+      '${rider.status || 'Pending'}', '${(rider.statusNotes || '').replace(/'/g, "''")}', '${rider.createdAt}', '${rider.updatedAt}'
+    );`;
+
+    const res = await executeD1Query(sql);
+    if (res.success) {
+      syncedRiders++;
+    } else {
+      errors.push(`Rider ${rider.id}: ${res.error}`);
+    }
+
+    for (const doc of rider.documents) {
+      const docSql = `INSERT OR REPLACE INTO documents (id, ownerId, ownerType, docType, fileName, uploadedAt) VALUES ('${doc.id}', '${rider.id}', 'rider', '${doc.type}', '${doc.fileName.replace(/'/g, "''")}', '${doc.uploadedAt}');`;
+      const docRes = await executeD1Query(docSql);
+      if (docRes.success) syncedDocuments++;
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    syncedDrivers,
+    syncedRiders,
+    syncedDocuments,
+    errors
+  };
+}
+

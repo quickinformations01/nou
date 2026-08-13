@@ -421,5 +421,21 @@ export const api = {
         config: getLocalConfig()
       };
     }
+  },
+
+  syncAllToD1: async (): Promise<{
+    success: boolean;
+    syncedDrivers: number;
+    syncedRiders: number;
+    syncedDocuments: number;
+    errors: string[];
+  }> => {
+    return await request<{
+      success: boolean;
+      syncedDrivers: number;
+      syncedRiders: number;
+      syncedDocuments: number;
+      errors: string[];
+    }>('/api/d1/sync', { method: 'POST' });
   }
 };

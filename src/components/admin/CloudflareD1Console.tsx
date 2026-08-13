@@ -42,6 +42,10 @@ export const CloudflareD1Console: React.FC = () => {
   const [configSuccess, setConfigSuccess] = useState<string | null>(null);
   const [copiedSchema, setCopiedSchema] = useState(false);
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
   const fetchD1Info = async () => {
     try {
       const statsRes = await api.getD1Stats();
@@ -56,6 +60,32 @@ export const CloudflareD1Console: React.FC = () => {
   useEffect(() => {
     fetchD1Info();
   }, []);
+
+  const handleSyncAll = async () => {
+    if (!d1Config.apiToken) {
+      setActiveSubTab('settings');
+      setSyncError('Cloudflare API Token missing! Please enter your Cloudflare API Token in Settings below to sync with live D1.');
+      return;
+    }
+
+    setSyncing(true);
+    setSyncSuccess(null);
+    setSyncError(null);
+
+    try {
+      const res = await api.syncAllToD1();
+      if (res.success) {
+        setSyncSuccess(`Sync Completed Successfully! Synced ${res.syncedDrivers} Drivers, ${res.syncedRiders} Riders, and ${res.syncedDocuments} Documents directly to your live Cloudflare D1 database.`);
+        fetchD1Info();
+      } else {
+        setSyncError(`Sync partially failed: ${res.errors.join('; ')}`);
+      }
+    } catch (err: any) {
+      setSyncError(err.message || 'Failed to sync records with Cloudflare D1.');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleRunQuery = async () => {
     if (!sqlQuery.trim()) return;
@@ -317,7 +347,15 @@ CREATE TABLE IF NOT EXISTS documents (
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleSyncAll}
+              disabled={syncing}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {syncing ? 'Syncing with Cloudflare D1...' : 'Sync All Records to Cloudflare D1'}
+            </button>
             <button
               onClick={fetchD1Info}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors border border-slate-700"
@@ -326,6 +364,39 @@ CREATE TABLE IF NOT EXISTS documents (
             </button>
           </div>
         </div>
+
+        {/* Sync Notifications & Token Warning Banner */}
+        {!d1Config.apiToken && (
+          <div className="mt-4 p-3 bg-amber-950/60 border border-amber-800/80 rounded-xl text-amber-200 text-xs flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-amber-300">Why are records not appearing in your Cloudflare D1 backend?</span>
+              <p className="mt-0.5 text-amber-200/90 leading-relaxed">
+                The application is currently running in <strong>Local Application Storage Mode</strong> because no Cloudflare API Token is saved. All registered drivers, riders, and document records are saved locally in the app, but cannot be pushed to Cloudflare D1 without your token.
+              </p>
+              <button
+                onClick={() => setActiveSubTab('settings')}
+                className="mt-2 inline-flex items-center gap-1 text-amber-400 font-bold hover:underline"
+              >
+                <Key className="w-3.5 h-3.5" /> Enter your Cloudflare API Token in Settings to connect live Cloudflare D1 →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {syncSuccess && (
+          <div className="mt-4 p-3 bg-emerald-950/80 border border-emerald-800 text-emerald-300 rounded-xl text-xs flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+            <span>{syncSuccess}</span>
+          </div>
+        )}
+
+        {syncError && (
+          <div className="mt-4 p-3 bg-rose-950/80 border border-rose-800 text-rose-300 rounded-xl text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{syncError}</span>
+          </div>
+        )}
 
         {/* Database Stats Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-800 text-xs">
