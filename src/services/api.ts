@@ -13,26 +13,34 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers as Record<string, string> || {})
   };
 
-  const response = await fetch(url, { ...options, headers });
-  const text = await response.text();
-  
-  let data: any = {};
-  if (text && text.trim().length > 0) {
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      if (!response.ok) {
-        throw new Error(`Server error (${response.status}): ${text.slice(0, 150)}`);
+  try {
+    const response = await fetch(url, { ...options, headers });
+    const text = await response.text();
+    
+    let data: any = {};
+    if (text && text.trim().length > 0) {
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        if (!response.ok) {
+          throw new Error(`Server returned HTTP ${response.status}: ${text.slice(0, 100)}`);
+        }
+        throw new Error(`Invalid JSON response from ${url}`);
       }
-      throw new Error(`Invalid JSON received from ${url}: ${text.slice(0, 150)}`);
     }
-  }
 
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || `Server returned status ${response.status}`);
-  }
+    if (!response.ok) {
+      if (response.status === 405) {
+        throw new Error(`HTTP 405 Method Not Allowed on ${url}. Please verify request method ${options.method || 'GET'}.`);
+      }
+      throw new Error(data?.error || data?.message || `Server request failed with status ${response.status}`);
+    }
 
-  return data as T;
+    return data as T;
+  } catch (err: any) {
+    console.error(`API Request Error [${options.method || 'GET'} ${url}]:`, err);
+    throw err;
+  }
 }
 
 export const api = {

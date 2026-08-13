@@ -12,12 +12,23 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+  // CORS & OPTIONS Preflight Handler (Prevents HTTP 405 Method Not Allowed on API requests)
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
   const d1Store = loadD1Store();
 
   // ================= API ROUTES =================
 
   // Health check & D1 status
-  app.get('/api/health', (req, res) => {
+  app.get(['/api/health', '/api/health/'], (req, res) => {
     res.json({
       status: 'ok',
       service: 'Cloudflare D1 Driver & Rider Registration API',
@@ -29,7 +40,7 @@ async function startServer() {
   });
 
   // DRIVERS: Get all drivers
-  app.get('/api/drivers', (req, res) => {
+  app.get(['/api/drivers', '/api/drivers/'], (req, res) => {
     res.json(d1Store.drivers);
   });
 
@@ -41,7 +52,7 @@ async function startServer() {
   });
 
   // DRIVERS: Submit Driver Registration (Executes D1 SQL Insert)
-  app.post('/api/drivers', async (req, res) => {
+  app.post(['/api/drivers', '/api/drivers/'], async (req, res) => {
     try {
       const data = req.body;
 
@@ -145,7 +156,7 @@ async function startServer() {
   });
 
   // RIDERS: Get all riders
-  app.get('/api/riders', (req, res) => {
+  app.get(['/api/riders', '/api/riders/'], (req, res) => {
     res.json(d1Store.riders);
   });
 
@@ -157,7 +168,7 @@ async function startServer() {
   });
 
   // RIDERS: Submit Rider Registration (Executes D1 SQL Insert)
-  app.post('/api/riders', async (req, res) => {
+  app.post(['/api/riders', '/api/riders/'], async (req, res) => {
     try {
       const data = req.body;
 
@@ -251,7 +262,7 @@ async function startServer() {
   });
 
   // CLOUDFLARE D1: Execute Raw SQL Query
-  app.post('/api/d1/query', async (req, res) => {
+  app.post(['/api/d1/query', '/api/d1/query/'], async (req, res) => {
     const { sql } = req.body;
     if (!sql || typeof sql !== 'string') {
       return res.status(400).json({ error: 'Please provide a valid SQL query string.' });
@@ -262,12 +273,12 @@ async function startServer() {
   });
 
   // CLOUDFLARE D1: Get D1 Config
-  app.get('/api/d1/config', (req, res) => {
+  app.get(['/api/d1/config', '/api/d1/config/'], (req, res) => {
     res.json(d1Store.config);
   });
 
   // CLOUDFLARE D1: Update D1 Config
-  app.post('/api/d1/config', (req, res) => {
+  app.post(['/api/d1/config', '/api/d1/config/'], (req, res) => {
     const { accountId, databaseId, apiToken, databaseName } = req.body;
     d1Store.config = {
       accountId: accountId || '',
@@ -281,7 +292,7 @@ async function startServer() {
   });
 
   // CLOUDFLARE D1: Stats & Execution Logs
-  app.get('/api/d1/stats', (req, res) => {
+  app.get(['/api/d1/stats', '/api/d1/stats/'], (req, res) => {
     const totalDocs = d1Store.drivers.reduce((acc, d) => acc + d.documents.length, 0) +
                       d1Store.riders.reduce((acc, r) => acc + r.documents.length, 0);
 
@@ -298,7 +309,7 @@ async function startServer() {
   });
 
   // CLOUDFLARE D1: D1 Schema DDL Script
-  app.get('/api/d1/schema.sql', (req, res) => {
+  app.get(['/api/d1/schema.sql', '/api/d1/schema.sql/'], (req, res) => {
     const schemaSql = `-- Cloudflare D1 Database Schema Script for Driver & Rider Registration
 -- Binding Name in wrangler.toml or Worker Dashboard: noudb (or nou)
 
@@ -370,6 +381,12 @@ CREATE INDEX IF NOT EXISTS idx_riders_cnic ON riders(cnicNumber);
 CREATE INDEX IF NOT EXISTS idx_documents_owner ON documents(ownerId, ownerType);
 `;
     res.type('text/plain').send(schemaSql);
+  });
+
+  // Catch-all route for any unhandled /api/* endpoints
+  // Ensures POST/PUT/DELETE to unmatched API paths return 404 JSON instead of falling through to Vite/static server and triggering 405 Method Not Allowed
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
   });
 
   // ================= VITE MIDDLEWARE SETUP =================
