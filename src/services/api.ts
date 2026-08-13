@@ -14,10 +14,22 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   };
 
   const response = await fetch(url, { ...options, headers });
-  const data = await response.json();
+  const text = await response.text();
+  
+  let data: any = {};
+  if (text && text.trim().length > 0) {
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      if (!response.ok) {
+        throw new Error(`Server error (${response.status}): ${text.slice(0, 150)}`);
+      }
+      throw new Error(`Invalid JSON received from ${url}: ${text.slice(0, 150)}`);
+    }
+  }
 
   if (!response.ok) {
-    throw new Error(data.error || 'An unexpected server error occurred.');
+    throw new Error(data?.error || data?.message || `Server returned status ${response.status}`);
   }
 
   return data as T;

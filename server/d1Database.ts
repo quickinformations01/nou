@@ -269,10 +269,19 @@ export async function executeD1Query(sql: string, params: any[] = []): Promise<D
         body: JSON.stringify({ sql, params })
       });
 
-      const data = await response.json() as any;
+      const responseText = await response.text();
+      let data: any = null;
+      if (responseText && responseText.trim().length > 0) {
+        try {
+          data = JSON.parse(responseText);
+        } catch (e) {
+          console.warn('Non-JSON response from Cloudflare API:', responseText.slice(0, 100));
+        }
+      }
+
       const duration = Date.now() - startTime;
 
-      if (data.success && data.result && data.result[0]) {
+      if (data && data.success && data.result && data.result[0]) {
         const queryRes = data.result[0];
         store.queryLogs.unshift({
           id: `qlog-${Date.now()}`,
@@ -291,7 +300,7 @@ export async function executeD1Query(sql: string, params: any[] = []): Promise<D
           timestamp: new Date().toISOString()
         };
       } else {
-        const errorMsg = data.errors?.[0]?.message || 'Cloudflare D1 API Query Failed';
+        const errorMsg = data?.errors?.[0]?.message || (data ? JSON.stringify(data) : responseText.slice(0, 150)) || 'Cloudflare D1 API Query Failed';
         store.queryLogs.unshift({
           id: `qlog-${Date.now()}`,
           query: sql,
