@@ -190,6 +190,21 @@ export function loadD1Store(): D1StoreSchema {
     try {
       const data = fs.readFileSync(D1_FILE, 'utf-8');
       d1Instance = JSON.parse(data);
+      if (d1Instance) {
+        if (!d1Instance.config.accountId && process.env.CLOUDFLARE_D1_ACCOUNT_ID) {
+          d1Instance.config.accountId = process.env.CLOUDFLARE_D1_ACCOUNT_ID;
+        }
+        if (!d1Instance.config.databaseId && process.env.CLOUDFLARE_D1_DATABASE_ID) {
+          d1Instance.config.databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
+        }
+        if (!d1Instance.config.apiToken && process.env.CLOUDFLARE_D1_API_TOKEN) {
+          d1Instance.config.apiToken = process.env.CLOUDFLARE_D1_API_TOKEN;
+        }
+        if (process.env.CLOUDFLARE_D1_API_TOKEN) {
+          d1Instance.config.apiToken = process.env.CLOUDFLARE_D1_API_TOKEN;
+        }
+        d1Instance.config.isConnected = !!(d1Instance.config.accountId && d1Instance.config.apiToken);
+      }
       console.log('Cloudflare D1 Local Store loaded.');
       return d1Instance!;
     } catch (err) {
@@ -199,10 +214,10 @@ export function loadD1Store(): D1StoreSchema {
 
   const defaultConfig: D1Config = {
     accountId: process.env.CLOUDFLARE_D1_ACCOUNT_ID || '',
-    databaseId: process.env.CLOUDFLARE_D1_DATABASE_ID || 'nou',
+    databaseId: process.env.CLOUDFLARE_D1_DATABASE_ID || '',
     apiToken: process.env.CLOUDFLARE_D1_API_TOKEN || '',
     databaseName: 'noudb (nou)',
-    isConnected: !!(process.env.CLOUDFLARE_D1_ACCOUNT_ID && process.env.CLOUDFLARE_D1_DATABASE_ID && process.env.CLOUDFLARE_D1_API_TOKEN)
+    isConnected: !!(process.env.CLOUDFLARE_D1_ACCOUNT_ID || process.env.CLOUDFLARE_D1_API_TOKEN)
   };
 
   d1Instance = {
@@ -248,6 +263,88 @@ export function saveD1Store(): void {
   }
 }
 
+let schemaInitialized = false;
+
+export async function initCloudflareD1Schema(): Promise<void> {
+  if (schemaInitialized) return;
+  const store = loadD1Store();
+  if (!store.config.accountId || !store.config.databaseId || !store.config.apiToken) return;
+
+  schemaInitialized = true;
+
+  const ddlQueries = [
+    `CREATE TABLE IF NOT EXISTS drivers (
+      id TEXT PRIMARY KEY,
+      fullName TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      cnicNumber TEXT NOT NULL,
+      dob TEXT,
+      gender TEXT,
+      address TEXT,
+      city TEXT,
+      emergencyContactName TEXT,
+      emergencyContactPhone TEXT,
+      vehicleType TEXT,
+      vehicleMake TEXT,
+      vehicleModel TEXT,
+      vehicleYear TEXT,
+      licensePlate TEXT,
+      vehicleColor TEXT,
+      drivingLicenseNumber TEXT,
+      licenseExpiryDate TEXT,
+      status TEXT DEFAULT 'Pending',
+      statusNotes TEXT,
+      createdAt TEXT,
+      updatedAt TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS riders (
+      id TEXT PRIMARY KEY,
+      fullName TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      cnicNumber TEXT NOT NULL,
+      dob TEXT,
+      gender TEXT,
+      homeAddress TEXT,
+      city TEXT,
+      preferredPaymentMethod TEXT,
+      preferredVehicleTypes TEXT,
+      emergencyContactName TEXT,
+      emergencyContactPhone TEXT,
+      status TEXT DEFAULT 'Approved',
+      statusNotes TEXT,
+      createdAt TEXT,
+      updatedAt TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      ownerId TEXT,
+      ownerType TEXT,
+      docType TEXT,
+      fileName TEXT,
+      dataUrl TEXT,
+      uploadedAt TEXT
+    );`
+  ];
+
+  for (const sql of ddlQueries) {
+    try {
+      const url = `https://api.cloudflare.com/client/v4/accounts/${store.config.accountId}/d1/database/${store.config.databaseId}/query`;
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${store.config.apiToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sql })
+      });
+    } catch (e) {
+      console.warn('Failed to auto-init Cloudflare D1 schema:', e);
+    }
+  }
+}
+
 /**
  * Executes a raw SQL query against Cloudflare D1 REST API if credentials exist,
  * or simulates D1 SQL execution locally.
@@ -256,8 +353,9 @@ export async function executeD1Query(sql: string, params: any[] = []): Promise<D
   const store = loadD1Store();
   const startTime = Date.now();
 
-  // If Cloudflare credentials configured, execute real D1 REST API request
+  // Ensure tables exist on Cloudflare D1
   if (store.config.accountId && store.config.databaseId && store.config.apiToken) {
+    await initCloudflareD1Schema();
     try {
       const url = `https://api.cloudflare.com/client/v4/accounts/${store.config.accountId}/d1/database/${store.config.databaseId}/query`;
       const response = await fetch(url, {
